@@ -1,9 +1,15 @@
 import socket
 import time
 import os
+import signal
+import errno
 
 SERVER_ADDRESS = (HOST, PORT) = '', 8888
 REQUEST_QUEUE_SIZE = 5
+
+def signal_handler(signum, frame):
+  pid, status = os.wait()
+  print(f'Child {pid} terminated with status {status}')
 
 
 def handle_request(client_connection):
@@ -16,7 +22,7 @@ HTTP/1.1 200 OK
 Hello, World!
 """
   client_connection.sendall(http_response)
-  time.sleep(60)
+  time.sleep(3)
 
 
 def serve_forever():
@@ -27,10 +33,21 @@ def serve_forever():
   print(f'Serving HTTP on port {PORT} ...')
   print(f'Parent PID: {os.getpid()}')
 
-  while True:
-    client_connection, client_address = listen_socket.accept()
-    pid = os.fork()
+  signal.signal(signal.SIGCHLD, signal_handler)
 
+  while True:
+    try:
+      client_connection, client_address = listen_socket.accept()
+    except IOError as e:
+      code, msg = e.args
+      if code == errno.EINTR:
+        continue
+      else:
+        raise
+
+
+    pid = os.fork()
+    
     if pid == 0:
       listen_socket.close()
       handle_request(client_connection)
